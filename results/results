@@ -1,0 +1,204 @@
+base has weight decay of 0
+
+base model Tanh valid: 80%, test: 72%
+base model Relu valid: 82%, test: 74%
+
+base model Sigmoid valid: 81.3%, test: 62%
+
+Relu AdamW valid: 83%, test: 77%
+
+
+mlp base
+              precision    recall  f1-score   support
+
+           0       0.29      0.08      0.13       649
+           1       0.96      0.78      0.86      1988
+           2       0.93      0.90      0.91       452
+           3       0.78      0.70      0.74       370
+           4       0.29      0.66      0.40       726
+           5       0.86      0.84      0.85      2399
+
+    accuracy                           0.72      6584
+   macro avg       0.68      0.66      0.65      6584
+weighted avg       0.77      0.72      0.73      6584
+
+
+The biggest increases in performance were due to architecture type changes, from MLP to CNN, the former is a naive approach to model any kind of data and the latter takes advantage of time shifting invariances and extracts relevant features in a structured manner
+
+
+CNN
+
+
+cnn base valid acc: 91.1%, test: 86% - 88%
+
+cnn base
+              precision    recall  f1-score   support
+
+           0       0.53      0.82      0.64       649
+           1       0.97      0.96      0.97      1988
+           2       0.86      1.00      0.92       452
+           3       1.00      0.80      0.89       370
+           4       0.85      0.72      0.78       726
+           5       0.93      0.84      0.88      2399
+
+    accuracy                           0.87      6584
+   macro avg       0.86      0.86      0.85      6584
+weighted avg       0.89      0.87      0.88      6584
+
+
+
+
+cnn leakyReLU valid acc: 92.3%, test: 86.5%  Took longer to train, around double optimization steps to achieve the same performance. It is worth noting that it behaves better with sub-represented classes (Sitting, Standing and Upstairs). Maybe because gradients are not completely lost for signals that might be weak due to over-represented classes.
+
+              precision    recall  f1-score   support
+
+           0       0.61      0.79      0.69       649
+           1       0.91      0.97      0.94      1988
+           2       0.93      0.92      0.92       452
+           3       1.00      0.89      0.94       370
+           4       0.83      0.63      0.72       726
+           5       0.89      0.86      0.87      2399
+
+    accuracy                           0.86      6584
+   macro avg       0.86      0.84      0.85      6584
+weighted avg       0.87      0.86      0.86      6584
+
+
+
+cnn maxpool instead of avgpool valid acc: 89.5%, test: 86%. Using only average pooling instead hurts perfomance a small amount. Not significant
+
+              precision    recall  f1-score   support
+
+           0       0.52      0.85      0.64       649
+           1       0.98      0.97      0.97      1988
+           2       0.79      0.99      0.88       452
+           3       0.96      0.66      0.78       370
+           4       0.91      0.62      0.74       726
+           5       0.91      0.85      0.88      2399
+
+    accuracy                           0.86      6584
+   macro avg       0.84      0.82      0.81      6584
+weighted avg       0.89      0.86      0.86      6584
+
+
+
+
+The base model size with no dropout has a drop of 2-3 points in performance (91.5%% valid, 84.75% test)
+
+Decreasing feature maps to 60% of their size las a limited impact on performance (89.9% valid, 86.8% test), which doesn't decrease significantly if no dropout is used (89.6% valid, 86% test). However, this smaller model takes more than double optimization steps to train when using dropout.
+The smaller effect of dropout in
+
+
+Reflections
+
+Gaussian noise
+
+takes more optimization steps, more stable learning process (for validation accuracy)
+.05
+    valid 90.3%
+              precision    recall  f1-score   support
+
+           0       0.52      0.72      0.61       649
+           1       0.99      0.96      0.97      1988
+           2       0.82      0.99      0.90       452
+           3       0.96      0.73      0.83       370
+           4       0.89      0.64      0.74       726
+           5       0.85      0.86      0.85      2399
+
+    accuracy                           0.85      6584
+   macro avg       0.84      0.82      0.82      6584
+weighted avg       0.87      0.85      0.86      6584
+
+ACCURACY:  0.8520656136087484
+
+.005
+    valid 90.4%
+              precision    recall  f1-score   support
+
+           0       0.74      0.75      0.74       649
+           1       0.92      0.96      0.94      1988
+           2       0.80      0.99      0.88       452
+           3       0.97      0.68      0.80       370
+           4       0.87      0.71      0.78       726
+           5       0.91      0.92      0.91      2399
+
+    accuracy                           0.88      6584
+   macro avg       0.87      0.84      0.84      6584
+weighted avg       0.89      0.88      0.88      6584
+
+ACCURACY:  0.883505467800729
+
+
+.01
+    valid 90%
+              precision    recall  f1-score   support
+
+           0       0.56      0.82      0.66       649
+           1       0.98      0.96      0.97      1988
+           2       0.78      0.99      0.87       452
+           3       0.97      0.66      0.79       370
+           4       0.91      0.69      0.79       726
+           5       0.90      0.87      0.89      2399
+
+    accuracy                           0.87      6584
+   macro avg       0.85      0.83      0.83      6584
+weighted avg       0.89      0.87      0.87      6584
+
+ACCURACY:  0.8686208991494532
+
+
+.02
+    valid 91.1%%
+              precision    recall  f1-score   support
+
+           0       0.58      0.67      0.62       649
+           1       0.91      0.97      0.94      1988
+           2       0.95      1.00      0.97       452
+           3       0.99      0.93      0.96       370
+           4       0.88      0.71      0.78       726
+           5       0.89      0.85      0.87      2399
+
+    accuracy                           0.87      6584
+   macro avg       0.87      0.85      0.86      6584
+weighted avg       0.87      0.87      0.87      6584
+
+ACCURACY:  0.8681652490886999
+
+
+.1
+    valid 89.39%
+              precision    recall  f1-score   support
+
+           0       0.69      0.62      0.65       649
+           1       0.99      0.96      0.97      1988
+           2       0.83      0.98      0.90       452
+           3       0.76      0.77      0.77       370
+           4       0.81      0.56      0.66       726
+           5       0.85      0.95      0.90      2399
+
+    accuracy                           0.87      6584
+   macro avg       0.82      0.81      0.81      6584
+weighted avg       0.87      0.87      0.86      6584
+
+ACCURACY:  0.8672539489671932
+
+
+.2
+    valid 83.65%
+              precision    recall  f1-score   support
+
+           0       0.60      0.21      0.31       649
+           1       1.00      0.94      0.97      1988
+           2       0.72      0.91      0.81       452
+           3       0.35      0.69      0.47       370
+           4       0.47      0.43      0.45       726
+           5       0.88      0.93      0.90      2399
+
+    accuracy                           0.79      6584
+   macro avg       0.67      0.69      0.65      6584
+weighted avg       0.80      0.79      0.78      6584
+
+ACCURACY:  0.7910085054678008
+
+
+

@@ -38,7 +38,9 @@ Original file is located at
 
 # Commented out IPython magic to ensure Python compatibility.
 import os
+import copy
 import warnings
+import random
 warnings.filterwarnings(action='ignore')
 
 from __future__ import print_function
@@ -123,6 +125,7 @@ def show_basic_dataframe_info(dataframe):
     print("Number of rows in the dataframe: %i" % (dataframe.shape[0]))
     print("Number of columns in the dataframe: %i" % (dataframe.shape[1]))
 
+
 """The data can be downloaded from **[here](https://www.kaggle.com/datasets/sosoyeong/wisdm-raw)**.
 
 Then 'file_path' the directory to where you have put the data.
@@ -138,6 +141,7 @@ from io import StringIO
 
 file_path = '/Users/oscarcuellar/ocn/mila/rl/hw1/data/WISDM_ar_v1.1/WISDM_ar_v1.1_raw.txt'
 file_path = '/Users/oscarcuellar/ocn/mila/rl/hw1/data/WISDM_ar_v1.1_raw.txt'
+file_path = 'data/WISDM_ar_v1.1_raw.txt'
 
 f = open(file_path, 'r')
 csvStringIO = StringIO(f.read().replace(';', ''))
@@ -222,27 +226,41 @@ df.head()
 # train: user 1 ~ 28
 # test: user 28 ~
 
-df_train = df[df['user'] <= 28]
+random.seed(1)
+valid_user = set(random.sample(df[df['user'] <= 28].user.unique().tolist(), 7))
+
+df_valid = df[df['user'].map(lambda t: t in valid_user)]
+df_train = df[df['user'].map(lambda t: t <= 28 and t not in valid_user)]
+
 df_test = df[df['user'] > 28]
 
 # normalize train data (value range: 0 ~ 1)
 # normalization should be applied to test data in the same way
 pd.options.mode.chained_assignment = None  # defual='warm'
 
-df_train['x-axis'] = df_train['x-axis'] / df_train['x-axis'].max()
-df_train['y-axis'] = df_train['y-axis'] / df_train['y-axis'].max()
-df_train['z-axis'] = df_train['z-axis'] / df_train['z-axis'].max()
+def norm_df(_df):
+    _df['x-axis'] = _df['x-axis'] / _df['x-axis'].max()
+    _df['y-axis'] = _df['y-axis'] / _df['y-axis'].max()
+    _df['z-axis'] = _df['z-axis'] / _df['z-axis'].max()
+    _df = _df.round({'x-axis': 4, 'y-axis': 4, 'z-axis': 4})
 
+norm_df(df_train)
+norm_df(df_valid)
+norm_df(df_test)
+
+#df_train['x-axis'] = df_train['x-axis'] / df_train['x-axis'].max()
+#df_train['y-axis'] = df_train['y-axis'] / df_train['y-axis'].max()
+#df_train['z-axis'] = df_train['z-axis'] / df_train['z-axis'].max()
 
 # round numbers
-df_train = df_train.round({'x-axis':4, 'y-axis':4, 'z-axis': 4})
-df_train.head()
+#df_train = df_train.round({'x-axis':4, 'y-axis':4, 'z-axis': 4})
+#df_train.head()
 
-df_test['x-axis'] = df_test['x-axis'] / df_test['x-axis'].max()
-df_test['y-axis'] = df_test['y-axis'] / df_test['y-axis'].max()
-df_test['z-axis'] = df_test['z-axis'] / df_test['z-axis'].max()
+#df_test['x-axis'] = df_test['x-axis'] / df_test['x-axis'].max()
+#df_test['y-axis'] = df_test['y-axis'] / df_test['y-axis'].max()
+#df_test['z-axis'] = df_test['z-axis'] / df_test['z-axis'].max()
 
-df_test = df_test.round({'x-axis':4, 'y-axis':4, 'z-axis': 4})
+#df_test = df_test.round({'x-axis':4, 'y-axis':4, 'z-axis': 4})
 
 
 """Still the dataframe is not ready yet to be fed into a neural network.
@@ -282,6 +300,11 @@ def create_segments_and_labels(df, time_steps, step, label_name):
 
     return reshaped_segments, labels  # x, y
 
+
+x_valid, y_valid = create_segments_and_labels(df_valid,
+                                              TIME_PERIODS,
+                                              STEP_DISTANCE,
+                                              LABEL)  # LABEL = 'ActivityEncoded'
 
 x_train, y_train = create_segments_and_labels(df_train,
                                               TIME_PERIODS,
@@ -341,19 +364,115 @@ print('New y_train shape: ', y_train_hot.shape)
 # Convert your numpy arrays to PyTorch tensors
 x_train_tensor = torch.tensor(x_train, dtype=torch.float32)
 y_train_tensor = torch.tensor(y_train, dtype=torch.long)  # long for CrossEntropyLoss
+x_valid_tensor = torch.tensor(x_valid, dtype=torch.float32)
+y_valid_tensor = torch.tensor(y_valid, dtype=torch.long)  # long for CrossEntropyLoss
 x_test_tensor = torch.tensor(x_test, dtype=torch.float32)
 y_test_tensor = torch.tensor(y_test, dtype=torch.long)
 
 # Create TensorDatasets
 train_dataset = TensorDataset(x_train_tensor, y_train_tensor)
+valid_dataset = TensorDataset(x_valid_tensor, y_valid_tensor)
 test_dataset = TensorDataset(x_test_tensor, y_test_tensor)
 
 # Create DataLoaders
 batch_size = 64  # You can change this value as per your need
 train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+valid_loader = DataLoader(valid_dataset, batch_size=batch_size, shuffle=True)
 test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
 
-"""# Multi-layer Perceptron"""
+
+def validate(model, device, loss_f):
+    model.train(False)
+
+    # we initialize our kpis to keep track of across batches
+    avg_loss = 0.0
+    avg_accuracy = 0.0
+
+    with torch.no_grad():  # save some computations
+        for inputs, target in valid_loader:
+            inputs, target = inputs.to(device), target.to(device)
+            output = model(inputs)
+            loss = loss_f(output, target)
+
+            # TODO: code the evaluation loop
+            avg_accuracy += (output.argmax(-1) == target).to(torch.float).sum().item()
+            avg_loss += loss.item()
+
+    avg_loss /= len(valid_loader)
+    avg_accuracy /= len(x_valid)
+
+    print(f"Loss: {avg_loss:.5f}, Accuracy: {avg_accuracy:.5f}")
+
+    return avg_loss, avg_accuracy
+
+
+def add_gaussian_noise(x, sigma):
+    return x + torch.from_numpy(np.random.normal(loc=0, scale=sigma, size=tuple(x.shape)).astype(np.float32)).to(x.device)
+
+
+def train(model, device, optimizer, eval_every, epochs, loss_f, patience, sigma_noise=0):
+    # Initialize lists to store losses and accuracies
+    model.train()
+
+    c_train_losses = []
+    c_train_accuracies = []
+
+    train_losses = []
+    train_accuracies = []
+
+    valid_losses = []
+    valid_accuracies = []
+
+    best_va = -np.inf
+
+    c_steps = 0
+    c_patience = 0
+    best_model = dict()
+    for epoch in range(epochs):
+        for batch_idx, (inputs, target) in enumerate(train_loader):
+            inputs, target = inputs.to(device), target.to(device)
+
+            if sigma_noise > 0:
+                inputs = add_gaussian_noise(inputs, sigma_noise)
+
+            optimizer.zero_grad()
+            output = model(inputs)
+            loss = loss_f(output, target)
+
+            loss.backward()
+            optimizer.step()
+
+            c_train_accuracies.append((output.argmax(-1) == target).to(torch.float).mean().item())
+            c_train_losses.append(loss.item())
+
+            if c_steps % eval_every == eval_every-1:
+                vl, va = validate(model, device, loss_f)
+
+                valid_losses.append(vl)
+                valid_accuracies.append(va)
+
+                train_losses.append(np.array(c_train_losses)[-eval_every:].mean())
+                train_accuracies.append(np.array(c_train_accuracies)[-eval_every:].mean())
+
+                if va > best_va:
+                    print('--------- best validation', va)
+                    best_va = va
+                    best_model = copy.deepcopy(model.state_dict())
+                    c_patience = 0
+                else:
+                    c_patience += 1
+
+                if c_patience > patience:
+                    return best_model, train_losses, train_accuracies, valid_losses, valid_accuracies
+
+                model.train()
+
+            c_steps += 1
+
+    print(f"Train - Loss: {sum(train_losses)/len(train_losses):.5f}, Accuracy: {sum(train_accuracies)/len(train_accuracies):.5f}")
+
+    return best_model, train_losses, train_accuracies, valid_losses, valid_accuracies
+
 
 class mlp(nn.Module):
     def __init__(self, time_periods, n_classes, **kwargs):
@@ -364,16 +483,16 @@ class mlp(nn.Module):
         self.dim_in = time_periods * 3
         dim_out = n_classes
 
-        self.n_layers = kwargs.get('n_layers', self.dim_in)
+        self.n_layers = kwargs.get('n_layers', 3)
 
         self.layers = nn.ModuleList()
         for l in range(1, 1 + self.n_layers):
             if l == 1:
                 n_in = self.dim_in
-                n_out = kwargs.get('hid_dim_1', self.dim_in)
+                n_out = kwargs.get('hid_dim_1', 100)
             else:
-                n_in = kwargs.get('hid_dim_' + str(l-1), self.dim_in)
-                n_out = kwargs.get('hid_dim_' + str(l), self.dim_in)
+                n_in = kwargs.get('hid_dim_' + str(l-1), 100)
+                n_out = kwargs.get('hid_dim_' + str(l), 100)
 
             self.layers.append(nn.Linear(in_features=n_in, out_features=n_out))
 
@@ -387,129 +506,118 @@ class mlp(nn.Module):
         return self.lin_out(_x)
 
 
-def train(model, device, optimizer, steps):
-    # Initialize lists to store losses and accuracies
-    model.train()
+class cnn(nn.Module):
+    def __init__(self, time_periods, n_sensors, n_classes, **kwargs):
+        super(cnn, self).__init__()
+        self.time_periods = time_periods
+        self.n_sensors = n_sensors
+        self.n_classes = n_classes
 
-    losses = []
-    accuracies = []
+        # Convolutional layers
+        self.conv1 = nn.Conv1d(in_channels=3, out_channels=100, kernel_size=10)
+        self.conv2 = nn.Conv1d(in_channels=100, out_channels=100, kernel_size=10)
+        self.conv3 = nn.Conv1d(in_channels=100, out_channels=160, kernel_size=10)
+        self.conv4 = nn.Conv1d(in_channels=160, out_channels=160, kernel_size=10)
 
-    c_steps = 0
-    for batch_idx, (inputs, target) in enumerate(train_loader):
-        inputs, target = inputs.to(device), target.to(device)
+        self.activation = nn.functional.relu_
 
-        optimizer.zero_grad()
-        output = model(inputs)
-        loss = criterion(output, target)
+        # Pooling and dropout
+        self.maxpool1 = nn.MaxPool1d(kernel_size=3)
+        #self.avgpool1 = nn.AvgPool1d(kernel_size=2)
+        self.avgpool1 = nn.AvgPool1d(kernel_size=2)
+        self.dropout = nn.Dropout(.5)
+        # Adaptive pool layer to adjust the size before sending to fully connected layer
 
-        loss.backward()
-        optimizer.step()
+        # Fully connected layer
+        self.out = nn.Linear(in_features=160, out_features=6)
 
-        accuracies.append((output.argmax(-1) == target).to(torch.float).mean().item())
-        losses.append(loss.item())
-        c_steps += 1
-        if c_steps >= steps:
-            break
+    def forward(self, x):
+        # Reshape the input to (batch_size, n_sensors, time_periods)
+        #_x = x.reshape...
+        _x = x.permute(0, 2, 1)
+        # Convolutional layers with ReLU activations
+        _x = self.activation(self.conv1(_x))
+        _x = self.activation(self.conv2(_x))
+        _x = self.maxpool1(_x)
+        _x = self.activation(self.conv3(_x))
+        _x = self.activation(self.conv4(_x))
 
-    print(f"Train - Loss: {sum(losses)/len(losses):.5f}, Accuracy: {sum(accuracies)/len(accuracies):.5f}")
+        # Global average pooling and dropout
+        _x = self.avgpool1(_x)
 
-    return losses, accuracies
+        # Flatten the tensor for the fully connected layer
+        _x = _x.flatten(start_dim=1)
+        _x = self.dropout(_x)
+        # Output layer with softmax activation
+        _x = self.out(_x)
 
+        #pred = nn.functional.log_softmax(_x, 1)
 
-def validate(model, device):
-    model.train(False)
-
-    # we initialize our kpis to keep track of across batches
-    avg_loss = 0.0
-    avg_accuracy = 0.0
-
-    with torch.no_grad():  # save some computations
-        for inputs, target in test_loader:
-            inputs, target = inputs.to(device), target.to(device)
-            output = model(inputs)
-            loss = criterion(output, target)
-
-            # TODO: code the evaluation loop
-            avg_accuracy += (output.argmax(-1) == target).to(torch.float).mean().item()
-            avg_loss += loss.item()
-
-    avg_loss /= len(test_loader)
-    avg_accuracy /= len(test_loader)
-
-    print(f"Loss: {avg_loss:.5f}, Accuracy: {avg_accuracy:.5f}")
-
-    return avg_loss, avg_accuracy
+        # output the loss, Use log_softmax for numerical stability
+        return _x
 
 
 
 # Assuming TIME_PERIODS and n_classes are defined
-model_mlp = mlp(time_periods=TIME_PERIODS, n_classes=n_classes, n_layers=2, hid_dim_1=256, hid_dim_2=64, hid_dim_3=60)
+#model = mlp(time_periods=TIME_PERIODS, n_classes=n_classes, n_layers=3, hid_dim_1=100, hid_dim_2=100, hid_dim_3=100)
+model = cnn(TIME_PERIODS, n_sensors, n_classes)
 
-model_mlp.to(device)
+model.to(device)
 
 # Print model summary
-print(model_mlp)
+print(model)
 
 # Use Pytorch's cross entropy Loss function for a classification task
-criterion = nn.CrossEntropyLoss()
+ce = nn.CrossEntropyLoss()
 
 # Choose your Optimizer
-my_optimizer = torch.optim.AdamW(params=model_mlp.parameters(), lr=.001, weight_decay=.01)
+my_optimizer = torch.optim.Adam(params=model.parameters(), lr=.001)
 
 BATCH_SIZE = 400
 EPOCHS = 500
 
-train_losses = []
-val_losses = []
-train_accs = []
-val_accs = []
+eval_every = 20  # To validate every 20 opt steps
+patience = 150  # 150 evaluations with no increase in acc
 
-steps = int(len(train_loader) / 1)  # To validate 3 times per epoch
+model_dct, train_losses, train_accs, val_losses, val_accs = train(model,
+                                                                  device,
+                                                                  my_optimizer,
+                                                                  eval_every,
+                                                                  EPOCHS,
+                                                                  ce,
+                                                                  patience,
+                                                                  sigma_noise=0.005)
 
-for epoch in range(EPOCHS):
+model.load_state_dict(model_dct)
 
-    validate(model_mlp, device)
-    tl, ta = train(model_mlp, device, my_optimizer, steps)
-    train_losses += tl
-    train_accs += ta
+def plot_perfomance(train_losses, train_accs, val_losses, val_accs, eval_every):
+
+    fig, ax1 = plt.subplots()
+
+    ax1.set_xlabel('optimization steps')
+    ax1.set_ylabel('accuracy', color='tab:red')
+
+    x_axis = [t * eval_every for t in range(len(train_accs[1:]))]
+    ax1.plot(x_axis, train_accs[1:], color='tab:red', label='train acc', linestyle='dashed', lw=2)
+    ax1.plot(x_axis, val_accs[1:], color='tab:blue', label='valid acc', linestyle='dashed', lw=2)
+    ax1.tick_params(axis='y', labelcolor='tab:red')
+    ax1.legend()
+
+    ax2 = ax1.twinx()  # instantiate a second axes that shares the same x-axis
+
+    ax2.set_ylabel('loss', color='tab:blue')  # we already handled the x-label with ax1
+    ax2.plot(x_axis, train_losses[1:], color='tab:red', label='train loss')
+    ax2.plot(x_axis, val_losses[1:], color='tab:blue', label='valid loss')
+    ax2.tick_params(axis='y', labelcolor='tab:blue')
+
+    fig.tight_layout()  # otherwise the right y-label is slightly clipped
+    ax2.legend()
+
+    plt.show()
 
 
-# Losses and accuracy plots
-def plot_perfomance(train_losses, val_losses):
-    raise NotImplementedError
+plot_perfomance(train_losses, train_accs, val_losses, val_accs, eval_every)
 
-"""Result from the article
-
-![Expectation](attachment:16797bb4-c2ae-4f1b-8a7a-e195e39da9c3.png)
-
-## Test
-"""
-
-# normalize test data
-
-'''
-df_test['x-axis'] = df_test['x-axis'] / df_test['x-axis'].max()
-df_test['y-axis'] = df_test['y-axis'] / df_test['y-axis'].max()
-df_test['z-axis'] = df_test['z-axis'] / df_test['z-axis'].max()
-
-df_test = df_test.round({'x-axis':4, 'y-axis':4, 'z-axis': 4})
-
-x_test, y_test = create_segments_and_labels(df_test,
-                                            TIME_PERIODS,
-                                            STEP_DISTANCE,
-                                            LABEL)
-
-x_test = x_test.reshape(x_test.shape[0], input_shape)
-
-x_test = x_test.astype('float32')
-y_test = y_test.astype('float32')
-
-y_test = to_categorical(y_train, n_classes)
-'''
-print('Accuracy on test data: ', val_accs[-1])
-print('Loss on test data: ', val_losses[-1])
-
-"""The test accuray is **about 75%**."""
 
 def show_confusion_matrix(validaitons, predictions, title=None):
     matrix = metrics.confusion_matrix(validaitons, predictions)
@@ -529,13 +637,33 @@ def show_confusion_matrix(validaitons, predictions, title=None):
     plt.xlabel('Predicted Label')
     plt.show()
 
-#y_pred_test = model_m.predict(x_test)
-#max_y_pred_test = np.argmax(y_pred_test, axis=1)
-#max_y_test = np.argmax(y_test, axis=1)
 
-#show_confusion_matrix(max_y_test, max_y_pred_test)
+model.train(False)
 
-#print(classification_report(max_y_test, max_y_pred_test))
+y_pred_test = model(x_test_tensor.to(device))
+max_y_pred_test = np.argmax(y_pred_test.cpu().detach().numpy(), axis=1)
+
+show_confusion_matrix(y_test, max_y_pred_test)
+
+acc = (y_test == max_y_pred_test).mean()
+
+print(classification_report(y_test, max_y_pred_test))
+
+print('ACCURACY: ', acc)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 """---
 
@@ -544,59 +672,13 @@ def show_confusion_matrix(validaitons, predictions, title=None):
 * Reference article: https://blog.goodaudience.com/introduction-to-1d-convolutional-neural-networks-in-keras-for-time-sequences-3a7ff801a2cf
 * Reference code: https://github.com/ni79ls/har-keras-cnn/blob/master/20180903_Keras_HAR_WISDM_CNN_v1.0_for_medium.py
 
- A 1D CNN is very effective when you expect to derive interesting features from shorter (fixed-length) segments of the overall data set and where the location of the feature within the segment is not of high relevance.
+ A 1D CNN is very effective when you expect to derive interesting features from shorter (fixed-length) segments of the 
+ overall data set and where the location of the feature within the segment is not of high relevance.
 
 
-This applies well to the analysis of time sequences of sensor data (such as gyroscope or accelerometer data). It also applies to the analysis of any kind of signal data over a fixed-length period (such as audio signals).
+This applies well to the analysis of time sequences of sensor data (such as gyroscope or accelerometer data). It also 
+applies to the analysis of any kind of signal data over a fixed-length period (such as audio signals).
 """
-
-
-class cnn(nn.Module):
-    def __init__(self, time_periods, n_sensors, n_classes, **kwargs):
-        super(cnn, self).__init__()
-        self.time_periods = time_periods
-        self.n_sensors = n_sensors
-        self.n_classes = n_classes
-
-        # Convolutional layers
-        self.conv1 = nn.Conv1d(in_channels=3, out_channels=100, kernel_size=10)
-        self.conv2 = nn.Conv1d(in_channels=100, out_channels=100, kernel_size=10)
-        self.conv3 = nn.Conv1d(in_channels=100, out_channels=160, kernel_size=10)
-        self.conv4 = nn.Conv1d(in_channels=160, out_channels=160, kernel_size=10)
-
-        # Pooling and dropout
-        self.maxpool1 = nn.MaxPool1d(kernel_size=3)
-        self.avgpool1 = nn.AvgPool1d(kernel_size=2)
-        self.dropout = nn.Dropout(.5)
-        # Adaptive pool layer to adjust the size before sending to fully connected layer
-
-        # Fully connected layer
-        self.out = nn.Linear(in_features=160, out_features=6)
-
-    def forward(self, x):
-        # Reshape the input to (batch_size, n_sensors, time_periods)
-        #_x = x.reshape...
-        _x = x.permute(0, 2, 1)
-        # Convolutional layers with ReLU activations
-        _x = nn.functional.relu(self.conv1(_x))
-        _x = nn.functional.relu(self.conv2(_x))
-        _x = self.maxpool1(_x)
-        _x = nn.functional.relu(self.conv3(_x))
-        _x = nn.functional.relu(self.conv4(_x))
-
-        # Global average pooling and dropout
-        _x = self.avgpool1(_x)
-
-        # Flatten the tensor for the fully connected layer
-        _x = _x.flatten(start_dim=1)
-        _x = self.dropout(_x)
-        # Output layer with softmax activation
-        _x = self.out(_x)
-
-        #pred = nn.functional.log_softmax(_x, 1)
-
-        # output the loss, Use log_softmax for numerical stability
-        return _x
 
 
 def train_cnn(model, device, optimizer, steps, loss_f):
@@ -707,6 +789,40 @@ validate_cnn(model_cnn, device)
 plot_perfomance(cnn_train_losses, cnn_val_losses)
 
 
+
+
+
+
+
+
+
+
+
+
+
+start_date = datetime.now() - timedelta(days=30)
+until = datetime.now()
+since = start_date
+_all = []
+while start_date < until:
+    print(start_date)
+    #_, events = es_topics_query(since=start_date - timedelta(days=5), until=start_date + timedelta(days=1))
+    _, events = es_topics_query(since=start_date - timedelta(days=5), until=start_date + timedelta(days=1))
+    #sma = [t for t in events if 'san miguel' in t['summary'].lower() and 'allende' in t['summary'].lower()]
+    ld = [t for t in events if 'informe de gobierno' in t['summary'].lower() and 'diego sinhue' in t['summary'].lower()]
+    _all += ld
+    start_date += timedelta(days=5)
+
+
+aa_df = pn.DataFrame({'summary': [t['summary'] for t in _all], 'topic_name': [t['topic_name'] for t in _all],
+                      'topic_date': [t['topic_date'] for t in _all],
+                      'related_documents': [t['related_documents']['news_count'] for t in _all]})
+
+
+
+aa_df = pn.DataFrame({'text': [t['text'] for t in _all], 'title': [t['title'] for t in _all],
+                      'date': [t['date_created'] for t in _all],
+                      'url': [t['url'] for t in _all]})
 
 
 
