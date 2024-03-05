@@ -143,25 +143,20 @@ file_path = '/Users/oscarcuellar/ocn/mila/rl/hw1/data/WISDM_ar_v1.1/WISDM_ar_v1.
 file_path = '/Users/oscarcuellar/ocn/mila/rl/hw1/data/WISDM_ar_v1.1_raw.txt'
 file_path = 'data/WISDM_ar_v1.1_raw.txt'
 
-f = open(file_path, 'r')
-csvStringIO = StringIO(f.read().replace(';', ''))
-f.close()
 
 column_names = ['user', 'activity', 'timestamp', 'x-axis', 'y-axis', 'z-axis']
-df = pd.read_csv(csvStringIO)
+
 df = read_data(file_path)
 
 show_basic_dataframe_info(df)
 df.head(10)
 
 # by activity type
-df['activity'].value_counts().plot(kind='bar',
-                                   title='Training Examples by Activity Type')
+df['activity'].value_counts().plot(kind='bar', title='Training Examples by Activity Type')
 plt.show()
 
 # by user
-df['user'].value_counts().plot(kind='bar',
-                                  title='Training Examples by User')
+df['user'].value_counts().plot(kind='bar', title='Training Examples by User')
 plt.show()
 
 """- We have more data for walking and jogging activities more than other activities.
@@ -198,7 +193,7 @@ def plot_axis(ax, x, y, title):
 
 for activity in np.unique(df['activity']):
     subset = df[df['activity'] == activity][:180]  # check only for first 180 records (9 seconds)
-    plot_activity(activity, subset)
+    #plot_activity(activity, subset)
 
 """Activies like Walking and Jogging has higher acceleration compared to Sitting.
 
@@ -410,7 +405,7 @@ def add_gaussian_noise(x, sigma):
     return x + torch.from_numpy(np.random.normal(loc=0, scale=sigma, size=tuple(x.shape)).astype(np.float32)).to(x.device)
 
 
-def train(model, device, optimizer, eval_every, epochs, loss_f, patience, sigma_noise=0):
+def train(model, device, optimizer, eval_every, epochs, loss_f, patience, sigma_noise=0, use_patience=True):
     # Initialize lists to store losses and accuracies
     model.train()
 
@@ -462,7 +457,7 @@ def train(model, device, optimizer, eval_every, epochs, loss_f, patience, sigma_
                 else:
                     c_patience += 1
 
-                if c_patience > patience:
+                if c_patience > patience and use_patience:
                     return best_model, train_losses, train_accuracies, valid_losses, valid_accuracies
 
                 model.train()
@@ -586,11 +581,13 @@ model_dct, train_losses, train_accs, val_losses, val_accs = train(model,
                                                                   EPOCHS,
                                                                   ce,
                                                                   patience,
-                                                                  sigma_noise=0.005)
+                                                                  sigma_noise=0,
+                                                                  use_patience=False)
 
 model.load_state_dict(model_dct)
 
-def plot_perfomance(train_losses, train_accs, val_losses, val_accs, eval_every):
+
+def plot_perfomance(train_losses, train_accs, val_losses, val_accs, eval_every, fpath):
 
     fig, ax1 = plt.subplots()
 
@@ -612,17 +609,19 @@ def plot_perfomance(train_losses, train_accs, val_losses, val_accs, eval_every):
 
     fig.tight_layout()  # otherwise the right y-label is slightly clipped
     ax2.legend()
-
-    plt.show()
-
-
-plot_perfomance(train_losses, train_accs, val_losses, val_accs, eval_every)
+    plt.gcf().set_size_inches(21, 7)
+    plt.savefig(fpath, dpi=120)
+    plt.close()
 
 
-def show_confusion_matrix(validaitons, predictions, title=None):
+plot_perfomance(train_losses, train_accs, val_losses, val_accs, eval_every, 'results/savetest.png')
+
+
+def show_confusion_matrix(validaitons, predictions, title=None, fpath=None):
     matrix = metrics.confusion_matrix(validaitons, predictions)
 
-    plt.figure(figsize=(6, 4))
+    #plt.figure(figsize=(6, 4))
+    plt.figure()
     sns.heatmap(matrix,
                 cmap='coolwarm',
                 linecolor='white',
@@ -635,7 +634,10 @@ def show_confusion_matrix(validaitons, predictions, title=None):
     else: plt.title('Confusion Matrix')
     plt.ylabel('True Label')
     plt.xlabel('Predicted Label')
-    plt.show()
+    plt.gcf().set_size_inches(12, 8)
+    if fpath is not None:
+        plt.savefig(fpath, dpi=120)
+    plt.close()
 
 
 model.train(False)
@@ -643,7 +645,7 @@ model.train(False)
 y_pred_test = model(x_test_tensor.to(device))
 max_y_pred_test = np.argmax(y_pred_test.cpu().detach().numpy(), axis=1)
 
-show_confusion_matrix(y_test, max_y_pred_test)
+show_confusion_matrix(y_test, max_y_pred_test, fpath='results/csavetest.png')
 
 acc = (y_test == max_y_pred_test).mean()
 
