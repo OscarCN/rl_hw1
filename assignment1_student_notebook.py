@@ -584,7 +584,7 @@ model_dct, train_losses, train_accs, val_losses, val_accs = train(model,
                                                                   sigma_noise=0,
                                                                   use_patience=False)
 
-model.load_state_dict(model_dct)
+#model.load_state_dict(model_dct)
 
 
 def plot_perfomance(train_losses, train_accs, val_losses, val_accs, eval_every, fpath):
@@ -614,7 +614,7 @@ def plot_perfomance(train_losses, train_accs, val_losses, val_accs, eval_every, 
     plt.close()
 
 
-plot_perfomance(train_losses, train_accs, val_losses, val_accs, eval_every, 'results/savetest.png')
+plot_perfomance(train_losses, train_accs, val_losses, val_accs, eval_every, 'results/overfit.png')
 
 
 def show_confusion_matrix(validaitons, predictions, title=None, fpath=None):
