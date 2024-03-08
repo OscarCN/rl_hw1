@@ -153,11 +153,11 @@ df.head(10)
 
 # by activity type
 df['activity'].value_counts().plot(kind='bar', title='Training Examples by Activity Type')
-plt.show()
+#plt.show()
 
 # by user
 df['user'].value_counts().plot(kind='bar', title='Training Examples by User')
-plt.show()
+#plt.show()
 
 """- We have more data for walking and jogging activities more than other activities.
 - 36 participants
