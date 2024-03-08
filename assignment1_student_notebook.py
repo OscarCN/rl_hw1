@@ -38,6 +38,7 @@ Original file is located at
 
 # Commented out IPython magic to ensure Python compatibility.
 import os
+import time
 import copy
 import warnings
 import random
@@ -45,6 +46,7 @@ warnings.filterwarnings(action='ignore')
 
 from __future__ import print_function
 from matplotlib import pyplot as plt
+from collections import Counter
 # %matplotlib inline
 import numpy as np
 import pandas as pd
@@ -311,6 +313,9 @@ x_test, y_test = create_segments_and_labels(df_test,
                                             STEP_DISTANCE,
                                             LABEL)
 
+class_counts = Counter(y_train)
+weights = np.array([1./class_counts[c] for c in y_train])
+
 print(TIME_PERIODS, STEP_DISTANCE)
 
 print('x_train shape: ', x_train.shape)
@@ -375,8 +380,11 @@ train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
 valid_loader = DataLoader(valid_dataset, batch_size=batch_size, shuffle=True)
 test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
 
+#train_loader = DataLoader(train_dataset, batch_size=batch_size, sampler=torch.utils.data.WeightedRandomSampler(weights=weights, num_samples=len(train_dataset), replacement=True))
+#valid_loader = DataLoader(valid_dataset, batch_size=batch_size, sampler=torch.utils.data.RandomSampler(valid_dataset, replacement=False))
+#test_loader = DataLoader(test_dataset, batch_size=batch_size, sampler=torch.utils.data.RandomSampler(test_dataset, replacement=False))
 
-def validate(model, device, loss_f):
+def validate(model, device, loss_f, sample_every=1):
     model.train(False)
 
     # we initialize our kpis to keep track of across batches
@@ -386,6 +394,8 @@ def validate(model, device, loss_f):
     with torch.no_grad():  # save some computations
         for inputs, target in valid_loader:
             inputs, target = inputs.to(device), target.to(device)
+            if sample_every > 1:
+                inputs = subsample_time(inputs, sample_every)
             output = model(inputs)
             loss = loss_f(output, target)
 
@@ -405,7 +415,66 @@ def add_gaussian_noise(x, sigma):
     return x + torch.from_numpy(np.random.normal(loc=0, scale=sigma, size=tuple(x.shape)).astype(np.float32)).to(x.device)
 
 
-def train(model, device, optimizer, eval_every, epochs, loss_f, patience, sigma_noise=0, use_patience=True):
+def time_shift(x, p):
+    if random.random() < p:
+        n_steps = random.randint(1, x.shape[1])
+        _x = x.cpu().numpy()
+        ph = _x[:, -n_steps:, :].copy()
+        _x[:, n_steps:, :] = _x[:, :-n_steps, :].copy()
+        _x[:, :n_steps, :] = ph.copy()
+        x.set_(torch.from_numpy(_x.astype(np.float32)).to(x.device))
+    return x
+
+
+def f_scale(x, factor_low, factor_high):
+
+    factor_1 = random.random() * (factor_high - factor_low) + factor_low
+    factor_2 = random.random() * (factor_high - factor_low) + factor_low
+    factor_3 = random.random() * (factor_high - factor_low) + factor_low
+
+    x[:, :, 0] *= factor_1
+    x[:, :, 1] *= factor_2
+    x[:, :, 2] *= factor_3
+
+    return x
+
+def mask(x, p):
+    if random.random() < p:
+        numels_1 = random.randint(1, 30)
+        numels_2 = random.randint(1, 30)
+        numels_3 = random.randint(1, 30)
+
+        start_1 = random.randint(0, x.shape[1] - numels_1)
+        start_2 = random.randint(1, x.shape[1] - numels_2)
+        start_3 = random.randint(1, x.shape[1] - numels_3)
+
+        x[:, start_1:start_1+numels_1, 0] = 0
+        x[:, start_2:start_2+numels_2, 1] = 0
+        x[:, start_3:start_3+numels_3, 2] = 0
+
+    return x
+
+
+def switch_dimensions(x, p):
+    if random.random() < p:
+        perm = np.random.permutation([0,1,2])
+        ph = x.cpu().numpy().copy()
+        _x = x.cpu().numpy().copy()
+
+        _x[:, :, 0] = ph[:, :, perm[0]]
+        _x[:, :, 1] = ph[:, :, perm[1]]
+        _x[:, :, 2] = ph[:, :, perm[2]]
+
+        x.set_(torch.from_numpy(_x.astype(np.float32)).to(x.device))
+
+    return x
+
+
+def subsample_time(x, every):
+    x = x[:, ::every, :]
+    return x
+
+def train(model, device, optimizer, eval_every, epochs, loss_f, patience, sigma_noise=0, use_patience=True, p_shift=0, scale=(1, 1), p_mask=0, p_switch=0, sample_every=1):
     # Initialize lists to store losses and accuracies
     model.train()
 
@@ -417,6 +486,7 @@ def train(model, device, optimizer, eval_every, epochs, loss_f, patience, sigma_
 
     valid_losses = []
     valid_accuracies = []
+    times = []
 
     best_va = -np.inf
 
@@ -429,9 +499,21 @@ def train(model, device, optimizer, eval_every, epochs, loss_f, patience, sigma_
 
             if sigma_noise > 0:
                 inputs = add_gaussian_noise(inputs, sigma_noise)
+            if p_shift > 0:
+                inputs = time_shift(inputs, p_shift)
+            if scale[0] != 1:
+                inputs = f_scale(inputs, scale[0], scale[1])
+            if p_mask > 0:
+                inputs = mask(inputs, p_mask)
+            if p_switch > 0:
+                inputs = switch_dimensions(inputs, p_switch)
+            if sample_every > 1:
+                inputs = subsample_time(inputs, sample_every)
 
             optimizer.zero_grad()
+            st = time.time()
             output = model(inputs)
+            times.append(time.time()-st)
             loss = loss_f(output, target)
 
             loss.backward()
@@ -441,7 +523,7 @@ def train(model, device, optimizer, eval_every, epochs, loss_f, patience, sigma_
             c_train_losses.append(loss.item())
 
             if c_steps % eval_every == eval_every-1:
-                vl, va = validate(model, device, loss_f)
+                vl, va = validate(model, device, loss_f, sample_every=sample_every)
 
                 valid_losses.append(vl)
                 valid_accuracies.append(va)
@@ -458,7 +540,7 @@ def train(model, device, optimizer, eval_every, epochs, loss_f, patience, sigma_
                     c_patience += 1
 
                 if c_patience > patience and use_patience:
-                    return best_model, train_losses, train_accuracies, valid_losses, valid_accuracies
+                    return best_model, train_losses, train_accuracies, valid_losses, valid_accuracies, times
 
                 model.train()
 
@@ -466,7 +548,7 @@ def train(model, device, optimizer, eval_every, epochs, loss_f, patience, sigma_
 
     print(f"Train - Loss: {sum(train_losses)/len(train_losses):.5f}, Accuracy: {sum(train_accuracies)/len(train_accuracies):.5f}")
 
-    return best_model, train_losses, train_accuracies, valid_losses, valid_accuracies
+    return best_model, train_losses, train_accuracies, valid_losses, valid_accuracies, times
 
 
 class mlp(nn.Module):
@@ -494,9 +576,9 @@ class mlp(nn.Module):
         self.lin_out = nn.Linear(self.layers[-1].out_features, out_features=dim_out)
 
     def forward(self, x):
-        _x = x.reshape(x.shape[0], input_shape)
+        _x = x.reshape(x.shape[0], self.time_periods * 3)
         for layer in self.layers:
-            _x = nn.functional.relu(layer(_x))
+            _x = nn.functional.sigmoid(layer(_x))
 
         return self.lin_out(_x)
 
@@ -509,11 +591,70 @@ class cnn(nn.Module):
         self.n_classes = n_classes
 
         # Convolutional layers
+        self.conv1 = nn.Conv1d(in_channels=3, out_channels=50, kernel_size=10)
+        self.conv2 = nn.Conv1d(in_channels=50, out_channels=50, kernel_size=10)
+        #self.batchnorm1 = nn.BatchNorm1d(100)
+        #self.layernorm1 = nn.LayerNorm([100, 62])
+        self.conv3 = nn.Conv1d(in_channels=50, out_channels=80, kernel_size=10)
+        self.conv4 = nn.Conv1d(in_channels=80, out_channels=80, kernel_size=10)
+        #self.batchnorm2 = nn.BatchNorm1d(160)
+        #self.layernorm2 = nn.LayerNorm([160, 2])
+        self.activation = nn.functional.relu_
+
+        # Pooling and dropout
+        self.maxpool1 = nn.MaxPool1d(kernel_size=3)
+        #self.avgpool1 = nn.AvgPool1d(kernel_size=2)
+        self.avgpool1 = nn.AvgPool1d(kernel_size=2)
+        self.dropout = nn.Dropout(.3)
+        # Adaptive pool layer to adjust the size before sending to fully connected layer
+
+        # Fully connected layer
+        self.out = nn.Linear(in_features=80, out_features=6)
+
+    def forward(self, x):
+        # Reshape the input to (batch_size, n_sensors, time_periods)
+        #_x = x.reshape...
+        _x = x.permute(0, 2, 1)
+        # Convolutional layers with ReLU activations
+        _x = self.activation(self.conv1(_x))
+        _x = self.activation(self.conv2(_x))
+        #_x = self.batchnorm1(_x)
+        _x = self.maxpool1(_x)
+        _x = self.activation(self.conv3(_x))
+        _x = self.activation(self.conv4(_x))
+        #_x = self.batchnorm2(_x)
+
+        # Global average pooling and dropout
+        _x = self.avgpool1(_x)
+
+        # Flatten the tensor for the fully connected layer
+        _x = _x.flatten(start_dim=1)
+        #_x = self.dropout(_x)
+        # Output layer with softmax activation
+        _x = self.out(_x)
+
+        #pred = nn.functional.log_softmax(_x, 1)
+
+        # output the loss, Use log_softmax for numerical stability
+        return _x
+
+
+class cnn(nn.Module):
+    def __init__(self, time_periods, n_sensors, n_classes, **kwargs):
+        super(cnn, self).__init__()
+        self.time_periods = time_periods
+        self.n_sensors = n_sensors
+        self.n_classes = n_classes
+
+        # Convolutional layers
         self.conv1 = nn.Conv1d(in_channels=3, out_channels=100, kernel_size=10)
         self.conv2 = nn.Conv1d(in_channels=100, out_channels=100, kernel_size=10)
+        #self.batchnorm1 = nn.BatchNorm1d(100)
+        #self.layernorm1 = nn.LayerNorm([100, 62])
         self.conv3 = nn.Conv1d(in_channels=100, out_channels=160, kernel_size=10)
         self.conv4 = nn.Conv1d(in_channels=160, out_channels=160, kernel_size=10)
-
+        #self.batchnorm2 = nn.BatchNorm1d(160)
+        #self.layernorm2 = nn.LayerNorm([160, 2])
         self.activation = nn.functional.relu_
 
         # Pooling and dropout
@@ -533,9 +674,11 @@ class cnn(nn.Module):
         # Convolutional layers with ReLU activations
         _x = self.activation(self.conv1(_x))
         _x = self.activation(self.conv2(_x))
+        #_x = self.batchnorm1(_x)
         _x = self.maxpool1(_x)
         _x = self.activation(self.conv3(_x))
         _x = self.activation(self.conv4(_x))
+        #_x = self.batchnorm2(_x)
 
         # Global average pooling and dropout
         _x = self.avgpool1(_x)
@@ -554,8 +697,15 @@ class cnn(nn.Module):
 
 
 # Assuming TIME_PERIODS and n_classes are defined
-#model = mlp(time_periods=TIME_PERIODS, n_classes=n_classes, n_layers=3, hid_dim_1=100, hid_dim_2=100, hid_dim_3=100)
-model = cnn(TIME_PERIODS, n_sensors, n_classes)
+model = mlp(time_periods=TIME_PERIODS, n_classes=n_classes, n_layers=3, hid_dim_1=100, hid_dim_2=100, hid_dim_3=100)
+
+
+#meta_val_accs = dict()
+#meta_test_accs = dict()
+
+#print('SWITCH !!!!!', p_switch)
+
+#model = cnn(TIME_PERIODS, n_sensors, n_classes)
 
 model.to(device)
 
@@ -566,6 +716,7 @@ print(model)
 ce = nn.CrossEntropyLoss()
 
 # Choose your Optimizer
+#my_optimizer = torch.optim.Adam(params=model.parameters(), lr=.001, weight_decay=.001)
 my_optimizer = torch.optim.Adam(params=model.parameters(), lr=.001)
 
 BATCH_SIZE = 400
@@ -573,18 +724,35 @@ EPOCHS = 500
 
 eval_every = 20  # To validate every 20 opt steps
 patience = 150  # 150 evaluations with no increase in acc
+sample_every = 1
 
-model_dct, train_losses, train_accs, val_losses, val_accs = train(model,
-                                                                  device,
-                                                                  my_optimizer,
-                                                                  eval_every,
-                                                                  EPOCHS,
-                                                                  ce,
-                                                                  patience,
-                                                                  sigma_noise=0,
-                                                                  use_patience=False)
+model_dct, train_losses, train_accs, val_losses, val_accs, times = train(model,
+                                                                         device,
+                                                                         my_optimizer,
+                                                                         eval_every,
+                                                                         EPOCHS,
+                                                                         ce,
+                                                                         patience,
+                                                                         sigma_noise=0,
+                                                                         use_patience=True,
+                                                                         p_shift=0,
+                                                                         scale=(1, 1),
+                                                                         p_mask=0,
+                                                                         p_switch=0,
+                                                                         sample_every=sample_every)
 
-#model.load_state_dict(model_dct)
+model.load_state_dict(model_dct)
+
+#model.train(False)
+
+#y_pred_test = model(x_test_tensor.to(device))
+#max_y_pred_test = np.argmax(y_pred_test.cpu().detach().numpy(), axis=1)
+#acc = (y_test == max_y_pred_test).mean()
+
+print('MEAN OPT TIME', sum(times) / len(times))
+#meta_val_accs[p_switch] = max(val_accs)
+#meta_test_accs[p_switch] = acc
+
 
 
 def plot_perfomance(train_losses, train_accs, val_losses, val_accs, eval_every, fpath):
@@ -614,7 +782,7 @@ def plot_perfomance(train_losses, train_accs, val_losses, val_accs, eval_every, 
     plt.close()
 
 
-plot_perfomance(train_losses, train_accs, val_losses, val_accs, eval_every, 'results/overfit.png')
+#plot_perfomance(train_losses, train_accs, val_losses, val_accs, eval_every, 'results/batchlayernorm_2_acc_loss.png')
 
 
 def show_confusion_matrix(validaitons, predictions, title=None, fpath=None):
@@ -642,10 +810,14 @@ def show_confusion_matrix(validaitons, predictions, title=None, fpath=None):
 
 model.train(False)
 
-y_pred_test = model(x_test_tensor.to(device))
+if sample_every > 1:
+    y_pred_test = model(subsample_time(x_test_tensor.to(device), sample_every))
+else:
+    y_pred_test = model(x_test_tensor.to(device))
+
 max_y_pred_test = np.argmax(y_pred_test.cpu().detach().numpy(), axis=1)
 
-show_confusion_matrix(y_test, max_y_pred_test, fpath='results/csavetest.png')
+#show_confusion_matrix(y_test, max_y_pred_test, fpath='results/oversampling_conf.png')
 
 acc = (y_test == max_y_pred_test).mean()
 

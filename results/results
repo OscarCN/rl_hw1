@@ -1,11 +1,14 @@
+one epoch is around 12.55 optimization steps
+
+
 base has weight decay of 0
 
-base model Tanh valid: 80%, test: 72%
-base model Relu valid: 82%, test: 74%
+base model Relu valid: 83%, test: 71.8%
+base model Tanh valid: 79.5%, test: 65.6%
 
-base model Sigmoid valid: 81.3%, test: 62%
+base model Sigmoid valid: 81.1%, test: 66%
 
-Relu AdamW valid: 83%, test: 77%
+Relu AdamW valid: 83%, test: 72%
 
 
 mlp base
@@ -23,13 +26,13 @@ mlp base
 weighted avg       0.77      0.72      0.73      6584
 
 
-The biggest increases in performance were due to architecture type changes, from MLP to CNN, the former is a naive approach to model any kind of data and the latter takes advantage of time shifting invariances and extracts relevant features in a structured manner
+The biggest increases in performance were due to architecture type changes, from MLP to CNN, the former is a naive approach that can model any kind of data and the latter imposes inductive biases such as taking advantage of time shifting invariances
 
 
 CNN
 
 
-cnn base valid acc: 91.1%, test: 86% - 88%
+cnn base valid acc: 91%, test: 85% - 87%
 
 cnn base
               precision    recall  f1-score   support
@@ -47,8 +50,8 @@ weighted avg       0.89      0.87      0.88      6584
 
 
 
-
-cnn leakyReLU valid acc: 92.3%, test: 86.5%  Took longer to train, around double optimization steps to achieve the same performance. It is worth noting that it behaves better with sub-represented classes (Sitting, Standing and Upstairs). Maybe because gradients are not completely lost for signals that might be weak due to over-represented classes.
+cnn leakyReLU valid acc: 92.3%, test: 86.5%  Took longer to train, around double optimization steps to achieve the same performance.
+It is worth noting that it behaves better with sub-represented classes (Sitting, Standing and Upstairs). Maybe because gradients are not completely lost for signals that might be weak due to over-represented classes.
 
               precision    recall  f1-score   support
 
@@ -217,6 +220,164 @@ ACCURACY:  0.8672539489671932
 weighted avg       0.80      0.79      0.78      6584
 
 ACCURACY:  0.7910085054678008
+
+
+Data augmentation
+
+Different data augmentation techniques are tested, most of them with promising results. Even though this should be obvious, perhaps it is worth noting that augmentation is done randomly, only over the training data and differently for each optimization step
+
+prob timeshift. time is shifted evenly across each channel, as their alignment is important. with certain probability, we shift a random number of time steps, from 1 to the length of the sequence, and the end offset segment put at the beginning of the sequence
+in theory, due to the translation invariance of CNNs this shouldn't increase performance. However, possibly due to how the dataset is built, i.e. cutting a continuous time series in chunks that can possibly include more than one class for each chunk, this seems to help model performance
+
+{0: 0.8713547995139733,
+0.05: 0.9154009720534629,
+0.1: 0.9103888213851762,
+0.2: 0.8912515188335358,
+0.5: 0.8816828675577156,
+0.8: 0.8883657351154314,
+1: 0.8964155528554071}
+
+test
+{0: 0. 899979334573259,
+0.05: 0. 8995660260384377,
+0.1: 0.9082455052696838,
+0.2: 0.9103120479437901,
+0.5: 0.9049390369911139,
+0.8: 0.907625542467452,
+1:0.9012192601777227｝
+
+other data augmentation techniques
+affine transformations:
+translation could be seen as time shift, to which a cnn should be invariant
+scaling could be relevant, in the amplitude to make the spikes higher and could also help "simulate" different calibrations in sensors, users energy and abruptness in movement. Here random amplitude scaling is implemented, a different scaling factor for each channel
+{-1: 0. 9249,
+0.5: 0.9229,
+0.2: 0.9063,
+0.1: 0.9024,
+0.1: 0.8977,
+0.2: 0.9127,
+0.5: 0.9177,
+1: 0.9332}
+
+test
+-1: 0. 8386,
+0.5: 0.8590,
+0.2: 0.8734,
+0.1: 0.8768,
+0.1: 0.8645,
+0.2: 0.8576,
+0.5: 0.8517,
+1: 0.8599}
+here, each scaling is a range around 1, for example .2 would scale the time series in a random factor between .8 and 1.2
+a large amount of scaling increases validation accuracy, but due to an unknown reason test accuracy seems to be hurt by it,
+
+scaling in the frequency could also be used, to a certain amount, for users with slower/faster movements, the author did not try this.
+
+cutout or masking can be used for segments of the time series, here, with probability p, a random (length and location) segment of each channel (differently) is masked to 0
+validation
+0.9: 0.9251
+0.75: 0.9328
+0.5: 0.9332
+0.1: 0.9167
+
+test
+0.9: 0.8491
+0.75: 0. 8467
+0.5: 0.8707
+0.1: 0.8462
+<INCLUDE MASKING>
+again, validation performance is increased while test performance is decreased or constant, -beginning to think this is due to a programming error but almost sure it isn't
+
+rotation. As each channel represents a coordinate, rotation could be performed across these dimensions, possibly simulating that the measuring device is rotated (think of a cellphone put downwards). The author didn't implement this technique due to time restrictions
+
+Ad-hoc technique.
+Considering that the device could be switched in x-y-z axis, input channels are randomly switched.
+valid
+{0.1: 0.9010126059103121,
+0.25: 0.9129985534201281,
+0.5: 0.9053523455259351,
+0.9: 0.9142384790245919}
+
+test
+{0.1: 0.8725698663426489,
+0.25: 0.8666464155528554,
+0.5: 0.8636087484811664,
+0.9: 0.85343256379100853
+didn't see a significant increase in test performance
+
+
+
+
+
+Baseline comparison
+A random baseline would select randomly across classes, it would be accurate with probability 1/6, yielding 16.6% accuracy, independently of class imbalance
+Another baseline for a naive predictor could be selecting the class that appears most of the time, selecting class "Walking" would yield around 35% accuracy
+These baselines are well below both models tested here.
+
+Overfitting
+Maximum accuracy on validation was 91%, dropped and remained around 88.8%, while validation loss kept increasing from a minimum of .34 to 8
+test accuracy was still 87%, this tells us that the CNN doesn't overfit, dropout and model architecture could be to blame
+<INCLUDE OVERFITTING>
+
+
+
+Batch Normalization
+Normalizes inputs across a batch with a few learned parameters, mitigating the well known and feared covariate shift
+implemented after the second convolution, slightly increases performance and stabilizes training
+implemented after the fourth convolutions, slightly increases performance and stabilizes training 87%
+implemented after the second and fourth convolutions, increases performance and stabilizes training 90%
+
+Layer Normalization
+Normalizes inputs across time features and channels, implemented after convolution layers but before its activations. Makes training more stable and faster as it reaches good performance in less optimization steps
+after the second convolution slightly increases generalization performance to 87.5% test
+implemented after the fourth convolution, actually hurts performance, possibly due to the change in intensity over features whose differences might be expressive
+implemented after the second and fourth convolutions, actually hurts performance, possibly due to the change in intensity over features whose differences might be expressive
+
+Combining layer normalization after the second convolution and batch normalization after the fourth convolution somehow makes training unstable and doesn't increase performance
+
+
+Optimizers
+Choice of learning rate is fundamental in model performance, slight changes can impact significantly and even make the model useless. Changes in optimizer tested here shouldn't impact significantly, but AdamW performs a little better if using weight decay
+Adam
+Learning Rate .01 doesn't learn, training is useless. If used Batch Normalization, the model learns, a bit noisily but consistently, but hurts generalization performance 83%
+Learning Rate .001 baseline model with good performance around 86%
+Learning Rate .0001 makes learning smoother reaching its highest performance earlier in training, however, it hurts generalization performance 80% test
+Weight decay of .001 slightly increases generalization performance 1%  (86.9%)
+AdamW
+Is supposed to perform better when using Weight Decay, here it did perform better than plain Adam
+Weight decay of .001 slightly increases generalization performance 1-2%  (87.5%)
+
+
+Model scaling
+for the baseline model, the mean optimization step time is 6.3e-4 seconds
+decreasing the number of filters to 50 and 80 in the first and final layers, and a dropout of .3 instead of .5 to prevent underfitting
+
+impact in model performance is not significant 85.8% and optimization time is not affected, with a similar mean optimization step time.
+This is also affected by other factors such as hardware, library implementations and other processes running in the operating system.
+
+in this smaller model, completely removing dropout slightly increases performance (86.2%) and does not affect training time
+
+Data scaling
+for subsampling the time series it is necessary to decrease the kernel sizes of the model accordingly.
+subsampling every 2nd sample for a rate of 10Hz slightly decreases performance 84.5% and doesn't have a significant impact on training time
+A more agressive subsampling of one every 5 time steps, does affect model performance significantly to a 75% accuracy
+
+Sampling strategies
+Randomly selecting each batch with replacement slightly increases performance ~.5% which may also be due to noise
+Oversampling sub represented classes achieves competitive overall performance of 87.4% and indeed increases accuracy for under represented classes, specially "standing" and "sitting" achieving the highest f1 score for this classes with 95%
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
