@@ -697,61 +697,63 @@ class cnn(nn.Module):
 
 
 # Assuming TIME_PERIODS and n_classes are defined
-model = mlp(time_periods=TIME_PERIODS, n_classes=n_classes, n_layers=3, hid_dim_1=100, hid_dim_2=100, hid_dim_3=100)
+#model = mlp(time_periods=TIME_PERIODS, n_classes=n_classes, n_layers=3, hid_dim_1=100, hid_dim_2=100, hid_dim_3=100)
 
 
-#meta_val_accs = dict()
-#meta_test_accs = dict()
+meta_val_accs = dict()
+meta_test_accs = dict()
 
-#print('SWITCH !!!!!', p_switch)
 
-#model = cnn(TIME_PERIODS, n_sensors, n_classes)
+for pshifht in [.05, .2]:
+    print('SWITCH !!!!!', pshifht)
 
-model.to(device)
+    model = cnn(TIME_PERIODS, n_sensors, n_classes)
 
-# Print model summary
-print(model)
+    model.to(device)
 
-# Use Pytorch's cross entropy Loss function for a classification task
-ce = nn.CrossEntropyLoss()
+    # Print model summary
+    print(model)
 
-# Choose your Optimizer
-#my_optimizer = torch.optim.Adam(params=model.parameters(), lr=.001, weight_decay=.001)
-my_optimizer = torch.optim.Adam(params=model.parameters(), lr=.001)
+    # Use Pytorch's cross entropy Loss function for a classification task
+    ce = nn.CrossEntropyLoss()
 
-BATCH_SIZE = 400
-EPOCHS = 500
+    # Choose your Optimizer
+    #my_optimizer = torch.optim.Adam(params=model.parameters(), lr=.001, weight_decay=.001)
+    my_optimizer = torch.optim.Adam(params=model.parameters(), lr=.001)
 
-eval_every = 20  # To validate every 20 opt steps
-patience = 150  # 150 evaluations with no increase in acc
-sample_every = 1
+    BATCH_SIZE = 400
+    EPOCHS = 500
 
-model_dct, train_losses, train_accs, val_losses, val_accs, times = train(model,
-                                                                         device,
-                                                                         my_optimizer,
-                                                                         eval_every,
-                                                                         EPOCHS,
-                                                                         ce,
-                                                                         patience,
-                                                                         sigma_noise=0,
-                                                                         use_patience=True,
-                                                                         p_shift=0,
-                                                                         scale=(1, 1),
-                                                                         p_mask=0,
-                                                                         p_switch=0,
-                                                                         sample_every=sample_every)
+    eval_every = 20  # To validate every 20 opt steps
+    patience = 150  # 150 evaluations with no increase in acc
+    sample_every = 1
 
-model.load_state_dict(model_dct)
+    model_dct, train_losses, train_accs, val_losses, val_accs, times = train(model,
+                                                                             device,
+                                                                             my_optimizer,
+                                                                             eval_every,
+                                                                             EPOCHS,
+                                                                             ce,
+                                                                             patience,
+                                                                             sigma_noise=0,
+                                                                             use_patience=True,
+                                                                             p_shift=pshifht,
+                                                                             scale=(1, 1),
+                                                                             p_mask=0,
+                                                                             p_switch=0,
+                                                                             sample_every=sample_every)
 
-#model.train(False)
+    model.load_state_dict(model_dct)
 
-#y_pred_test = model(x_test_tensor.to(device))
-#max_y_pred_test = np.argmax(y_pred_test.cpu().detach().numpy(), axis=1)
-#acc = (y_test == max_y_pred_test).mean()
+    model.train(False)
 
-print('MEAN OPT TIME', sum(times) / len(times))
-#meta_val_accs[p_switch] = max(val_accs)
-#meta_test_accs[p_switch] = acc
+    y_pred_test = model(x_test_tensor.to(device))
+    max_y_pred_test = np.argmax(y_pred_test.cpu().detach().numpy(), axis=1)
+    acc = (y_test == max_y_pred_test).mean()
+
+    print('MEAN OPT TIME', sum(times) / len(times))
+    meta_val_accs[pshifht] = max(val_accs)
+    meta_test_accs[pshifht] = acc
 
 
 
@@ -782,7 +784,7 @@ def plot_perfomance(train_losses, train_accs, val_losses, val_accs, eval_every, 
     plt.close()
 
 
-#plot_perfomance(train_losses, train_accs, val_losses, val_accs, eval_every, 'results/mlp_tanh_acc_loss.png')
+#plot_perfomance(train_losses, train_accs, val_losses, val_accs, eval_every, 'results/cnn_timeshift_acc_loss.png')
 
 
 def show_confusion_matrix(validaitons, predictions, title=None, fpath=None):
@@ -817,7 +819,7 @@ else:
 
 max_y_pred_test = np.argmax(y_pred_test.cpu().detach().numpy(), axis=1)
 
-#show_confusion_matrix(y_test, max_y_pred_test, fpath='results/mlp_best_conf.png')
+#show_confusion_matrix(y_test, max_y_pred_test, fpath='results/cnn_timeshift_conf.png')
 
 acc = (y_test == max_y_pred_test).mean()
 

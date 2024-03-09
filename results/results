@@ -65,9 +65,9 @@ cnn base
 weighted avg       0.89      0.87      0.88      6584
 
 
-
 cnn leakyReLU valid acc: 92.3%, test: 86.5%  Took longer to train, around double optimization steps to achieve the same performance.
 It is worth noting that it behaves better with sub-represented classes (Sitting, Standing and Upstairs). Maybe because gradients are not completely lost for signals that might be weak due to over-represented classes.
+
 
               precision    recall  f1-score   support
 
@@ -102,7 +102,7 @@ weighted avg       0.89      0.86      0.86      6584
 
 
 
-The base model size with no dropout has a drop of 2-3 points in performance (91.5%% valid, 84.75% test)
+The base model size with no dropout has a drop of 2-3 points in performance (91.5% valid, 84.75% test)
 
 Decreasing feature maps to 60% of their size las a limited impact on performance (89.9% valid, 86.8% test), which doesn't decrease significantly if no dropout is used (89.6% valid, 86% test). However, this smaller model takes more than double optimization steps to train when using dropout.
 The smaller effect of dropout in
