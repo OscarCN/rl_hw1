@@ -1,3 +1,16 @@
+Evaluations in validation data are made every 20 optimization steps. For the batch size of 64, each epoch takes roughly 12.55 optimization steps. All figures and results are reported in optimization steps.
+
+Training is done with a patience of 150 evaluations in validation data (around 12 epochs)
+
+On the importance of the Confusion Matrix
+As this is a matter of general importance across this report, we will address this in this section.
+The confusion matrix shows the accuracy of a classification model across each of the output classes, it can be important when classifying individual classes is relevant for a given task and possibly when misclassifying them comes at a high cost. Also for understanding a model's strengths as will be seen a couple of times throughout this report
+The following metrics can be derived from the Confusion Matrix:
+Accuracy: The ratio of total correct predictions to the total instances.
+Precision: Measures the proportion of true positive predictions among all positive predictions.
+Recall (Sensitivity): Indicates the proportion of true positive predictions among all actual positive instances.
+Specificity: Measures the proportion of true negative predictions among all actual negative instances.
+
 one epoch is around 12.55 optimization steps
 
 
