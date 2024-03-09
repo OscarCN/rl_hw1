@@ -578,7 +578,7 @@ class mlp(nn.Module):
     def forward(self, x):
         _x = x.reshape(x.shape[0], self.time_periods * 3)
         for layer in self.layers:
-            _x = nn.functional.relu(layer(_x))
+            _x = nn.functional.tanh(layer(_x))
 
         return self.lin_out(_x)
 
@@ -697,7 +697,7 @@ class cnn(nn.Module):
 
 
 # Assuming TIME_PERIODS and n_classes are defined
-model = mlp(time_periods=TIME_PERIODS, n_classes=n_classes, n_layers=3, hid_dim_1=150, hid_dim_2=150, hid_dim_3=100)
+model = mlp(time_periods=TIME_PERIODS, n_classes=n_classes, n_layers=3, hid_dim_1=100, hid_dim_2=100, hid_dim_3=100)
 
 
 #meta_val_accs = dict()
@@ -716,8 +716,8 @@ print(model)
 ce = nn.CrossEntropyLoss()
 
 # Choose your Optimizer
-my_optimizer = torch.optim.Adam(params=model.parameters(), lr=.001, weight_decay=.001)
-#my_optimizer = torch.optim.Adam(params=model.parameters(), lr=.001)
+#my_optimizer = torch.optim.Adam(params=model.parameters(), lr=.001, weight_decay=.001)
+my_optimizer = torch.optim.Adam(params=model.parameters(), lr=.001)
 
 BATCH_SIZE = 400
 EPOCHS = 500
@@ -782,7 +782,7 @@ def plot_perfomance(train_losses, train_accs, val_losses, val_accs, eval_every, 
     plt.close()
 
 
-#plot_perfomance(train_losses, train_accs, val_losses, val_accs, eval_every, 'results/mlp_best_acc_loss.png')
+#plot_perfomance(train_losses, train_accs, val_losses, val_accs, eval_every, 'results/mlp_tanh_acc_loss.png')
 
 
 def show_confusion_matrix(validaitons, predictions, title=None, fpath=None):
